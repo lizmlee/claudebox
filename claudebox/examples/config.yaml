@@ -1,0 +1,14 @@
+# claudebox simulate config (01_CONTRACTS.md §2.4)
+# Small, fast sweep suitable for smoke-testing simulate.py in seconds.
+topology: er            # er | smallworld
+N: 300
+k: 8
+rewire_p: 0.1           # smallworld only
+rho_sweep: [0.01,0.02,0.05,0.1,0.2]
+h: 0.1                  # hardened fraction
+source_mode: mixed      # all_human | all_orchestrator | mixed
+phi: 0.5                # mixed only
+reps: 30
+R_macro: 0.5
+seed: 0
+beta_table: beta_placeholder.json
