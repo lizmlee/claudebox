@@ -69,10 +69,13 @@ Graph G=(V,E), |V|=N. Generators: Erdős–Rényi (mean degree k) and small-worl
   "tokens": {"prompt": 0, "completion": 0, "cached": 0},
   "outcome_adopt": true,
   "outcome_relay": false,
+  "outcome_pushback": false,
   "raw_messages": []
 }
 ```
 `payload_id` references a fixed payload registry — **content held constant across source conditions**; only source/operationalization vary.
+
+`outcome_pushback` (added 2026-07-01): whether the receiver expressed any doubt, verification-seeking, or reluctance, independent of whether it ultimately complied (`outcome_adopt`) or declined — captures "did it push back more when it didn't believe this came from its real human" as its own measured variable rather than free text in `raw_messages`. **Optional**: records written before this field existed omit it; `score.py` and any other reader must treat a missing `outcome_pushback` as `false`, not as a validation error.
 
 ### 2.2 β table — `beta.json` (output of `score`, input of `simulate`)
 ```json

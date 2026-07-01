@@ -111,7 +111,10 @@ def bucket_counts(records: list[dict], outcome_field: str) -> dict[tuple[str, st
         key = _bucket_key(r)
         bucket = counts.setdefault(key, [0, 0])
         bucket[1] += 1  # trials
-        if r[outcome_field]:
+        # .get(..., False): outcome_pushback postdates the initial dyad
+        # schema (01_CONTRACTS.md §2.1) and is optional -- older records that
+        # lack it are treated as no-pushback, not a validation error.
+        if r.get(outcome_field, False):
             bucket[0] += 1  # successes
     return {k: (v[0], v[1]) for k, v in counts.items()}
 
@@ -163,12 +166,13 @@ def score(
     paths: list[str],
     out_path: str,
     relay_out_path: str | None = None,
+    pushback_out_path: str | None = None,
     z: float = 1.96,
     placeholder: bool = False,
     generated_by: str = "score.py v1",
 ) -> dict:
     """End-to-end: load logs, validate, aggregate, write beta.json (+ optional
-    relay.json). Returns the beta table dict that was written."""
+    relay.json / pushback.json). Returns the beta table dict that was written."""
     records = read_all_records(paths)
     operationalization = check_operationalization(records)
     d_max = max_dose(records)
@@ -207,6 +211,21 @@ def score(
         )
         common.write_beta_table(relay_out_path, relay_beta, relay_ci, relay_n, relay_provenance)
 
+    if pushback_out_path is not None:
+        pb_beta, pb_ci, pb_n = build_table(records, "outcome_pushback", d_max, z=z)
+        pb_provenance = common.provenance_block(
+            config={"z": z, "d_max": d_max, "n_records": len(records)},
+            seed=0,
+            generated_by=generated_by,
+            extra={
+                "source_logs": sorted(str(Path(p)) for p in paths),
+                "operationalization": operationalization,
+                "PLACEHOLDER": placeholder,
+                "table_kind": "pushback_rate",
+            },
+        )
+        common.write_beta_table(pushback_out_path, pb_beta, pb_ci, pb_n, pb_provenance)
+
     return {"beta": beta, "ci": ci, "n": n, "provenance": provenance}
 
 
@@ -220,6 +239,11 @@ def main(argv: list[str] | None = None) -> int:
         "--relay-out", default=None,
         help="optional output path for the relay-rate table (same shape, from outcome_relay)",
     )
+    parser.add_argument(
+        "--pushback-out", default=None,
+        help="optional output path for the pushback-rate table (same shape, from "
+             "outcome_pushback; missing/older records without this field count as no-pushback)",
+    )
     parser.add_argument("-z", type=float, default=1.96, help="Wilson z-score (default 1.96)")
     parser.add_argument(
         "--placeholder", action="store_true",
@@ -232,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             args.paths,
             args.out,
             relay_out_path=args.relay_out,
+            pushback_out_path=args.pushback_out,
             z=args.z,
             placeholder=args.placeholder,
         )
@@ -242,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {args.out}")
     if args.relay_out:
         print(f"wrote {args.relay_out}")
+    if args.pushback_out:
+        print(f"wrote {args.pushback_out}")
     return 0
 
 
