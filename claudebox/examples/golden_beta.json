@@ -1,0 +1,152 @@
+{
+  "beta": {
+    "hardened": {
+      "human": [
+        0.0,
+        0.75,
+        0.75,
+        0.75
+      ],
+      "orchestrator": [
+        0.0,
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "naive": {
+      "human": [
+        0.0,
+        0.25,
+        0.75,
+        0.75
+      ],
+      "orchestrator": [
+        0.0,
+        0.5,
+        0.75,
+        0.75
+      ]
+    }
+  },
+  "ci": {
+    "hardened": {
+      "human": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ]
+      ],
+      "orchestrator": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.15003570882017148,
+          0.8499642911798285
+        ],
+        [
+          0.15003570882017148,
+          0.8499642911798285
+        ],
+        [
+          0.15003570882017148,
+          0.8499642911798285
+        ]
+      ]
+    },
+    "naive": {
+      "human": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.045586062644636216,
+          0.6993639475573634
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ]
+      ],
+      "orchestrator": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.15003570882017148,
+          0.8499642911798285
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ],
+        [
+          0.3006360524426366,
+          0.9544139373553637
+        ]
+      ]
+    }
+  },
+  "n": {
+    "hardened": {
+      "human": [
+        0,
+        4,
+        4,
+        4
+      ],
+      "orchestrator": [
+        0,
+        4,
+        4,
+        4
+      ]
+    },
+    "naive": {
+      "human": [
+        0,
+        4,
+        4,
+        4
+      ],
+      "orchestrator": [
+        0,
+        4,
+        4,
+        4
+      ]
+    }
+  },
+  "provenance": {
+    "PLACEHOLDER": true,
+    "config_hash": "5649219f034f58af68d7c82c7308cc2ceb86caf640a4dabe8ec8c390a7cf2514",
+    "generated_at": "2026-07-01T15:41:27+00:00",
+    "generated_by": "score.py v1",
+    "operationalization": "channel",
+    "seed": 0,
+    "source_logs": [
+      "examples/synthetic_dyads.jsonl"
+    ],
+    "stochasticity_disclaimer": "Seeds fix graph generation, seed-set choice, and IC RNG only. They do NOT fix model stochasticity, which lives solely in `assay` (live API sampling) and is not reproducible run-to-run."
+  }
+}
