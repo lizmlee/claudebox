@@ -108,6 +108,9 @@ beta_table: beta.json
 
 ---
 
+## 2.5 Provenance notes
+- **OPEN DECISION resolved:** `channel` (2026-07-01). Human instruction occupies the true principal/user role; orchestrator instruction arrives as another agent's message. `assay.py` is unblocked for this operationalization.
+
 ## 3. Conventions
 - Pure Python stdlib only (`random`, `json`, `csv`, `statistics`, `argparse`, `math`, `hashlib`, `pathlib`). No third-party except the `anthropic` SDK, used only inside `assay`.
 - Every output file header: config hash (sha256 of resolved config), model versions if any, seed, and the stochasticity disclaimer (§1.6).
