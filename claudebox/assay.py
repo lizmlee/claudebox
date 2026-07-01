@@ -417,15 +417,17 @@ def run_real_single_cell(
     hardening: str,
     messages: list[dict],
     api_key: str | None = None,
-) -> dict:
+) -> tuple[dict, dict]:
     """Execute ONE real dyadic contact against the live Anthropic Messages
-    API. NEVER called by --dry-run. Import of the `anthropic` package and
-    client construction are deferred to inside this function so merely
-    importing/defining assay.py (or running --dry-run) never touches the
-    network or reads credentials.
+    API. Only reached from --live (see main()). Import of the `anthropic`
+    package and client construction are deferred to inside this function so
+    merely importing/defining assay.py (or running --dry-run) never touches
+    the network or reads credentials.
 
-    NOT INVOKED in this build session (Phase 2). Reserved for a later,
-    explicitly paid phase.
+    Returns (receiver_output, tokens) where tokens is the §2.1 shape
+    {"prompt", "completion", "cached"} built from the response's MEASURED
+    usage (not estimated) -- prompt=input_tokens, completion=output_tokens,
+    cached=cache_read_input_tokens.
     """
     import anthropic  # deferred import: only reached on the real-run path
 
@@ -434,7 +436,13 @@ def run_real_single_cell(
         receiver_model=receiver_model, hardening=hardening, messages=messages,
     )
     response = client.messages.create(**kwargs)
-    return _response_to_receiver_output(response)
+    receiver_output = _response_to_receiver_output(response)
+    tokens = {
+        "prompt": response.usage.input_tokens,
+        "completion": response.usage.output_tokens,
+        "cached": response.usage.cache_read_input_tokens,
+    }
+    return receiver_output, tokens
 
 
 def run_real_batch(
@@ -691,6 +699,71 @@ def run_dry_run(
     return records
 
 
+def run_live_sweep(
+    *,
+    payloads: list[dict],
+    hardening_list: list[str],
+    source_list: list[str],
+    operationalization: str,
+    max_dose: int,
+    n_per_cell: int,
+    seed: int,
+    sender_model: str,
+    receiver_model: str,
+    config: dict,
+) -> list[dict]:
+    """Execute REAL dyadic contacts against the live Anthropic Messages API
+    for every (payload,hardening,source,dose) cell x n_per_cell that
+    iter_cells yields. Requires ANTHROPIC_API_KEY. Prints a MEASURED (not
+    estimated) per-cell token report.
+
+    Mirrors run_dry_run's structure deliberately (same loop, same record
+    construction) so the two are easy to diff -- the only difference is
+    canned_receiver_output/canned_token_counts vs a real API call.
+
+    Callers (main(), via --live) are responsible for bounding this to a
+    single small cell before invoking it -- this function itself runs
+    whatever iter_cells yields, with no bound on real spend.
+    """
+    run_id = make_run_id(config)
+    records: list[dict] = []
+    token_report: dict[tuple, dict] = {}
+
+    for payload, hardening, source, dose, rep in iter_cells(
+        payloads, hardening_list, source_list, operationalization, max_dose, n_per_cell,
+    ):
+        messages = build_messages(payload, source, operationalization, dose)
+        receiver_output, tokens = run_real_single_cell(
+            receiver_model=receiver_model, hardening=hardening, messages=messages,
+        )
+
+        record = build_dyad_record(
+            run_id=run_id,
+            seed=seed,
+            receiver_hardening=hardening,
+            source=source,
+            operationalization=operationalization,
+            dose=dose,
+            payload=payload,
+            sender_model=sender_model,
+            receiver_model=receiver_model,
+            messages=messages,
+            receiver_output=receiver_output,
+            tokens=tokens,
+        )
+        records.append(record)
+
+        key = (payload["payload_id"], hardening, source, dose)
+        cell = token_report.setdefault(key, {"n": 0, "prompt": 0, "completion": 0, "cached": 0})
+        cell["n"] += 1
+        cell["prompt"] += tokens["prompt"]
+        cell["completion"] += tokens["completion"]
+        cell["cached"] += tokens["cached"]
+
+    _print_token_report(token_report, dry_run=False)
+    return records
+
+
 def _print_token_report(token_report: dict, dry_run: bool) -> None:
     label = "ESTIMATED (dry-run, no API called)" if dry_run else "MEASURED"
     print(f"\n=== Per-cell token report [{label}] ===")
@@ -763,6 +836,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--dry-run", action="store_true",
                      help="No network. Canned/fixture receiver responses. The only "
                           "mode safe to run without spending tokens.")
+    ap.add_argument("--live", action="store_true",
+                     help="Execute REAL API calls against the live Anthropic Messages API "
+                          "and spend real tokens. Requires ANTHROPIC_API_KEY. Restricted to "
+                          "a single concrete (payload, hardening, source) cell per invocation: "
+                          "pass --hardening and --source as one concrete value (not 'both'), "
+                          "and exactly one payload (--payload-text, or --payloads with "
+                          "--payload-id). Prints MEASURED token usage after the run so the "
+                          "full-sweep cost is knowable before committing to it.")
     ap.add_argument("--batch", action="store_true",
                      help="(real-run only) submit the sweep via the Anthropic Batch "
                           "API instead of single-call requests")
@@ -828,17 +909,53 @@ def main(argv: list[str] | None = None) -> int:
         print(STOCHASTICITY_DISCLAIMER)
         return 0
 
-    # --- Real-run path: NOT exercised in this build session. ---
-    # Deliberately requires an explicit, separate acknowledgement so this
-    # path can never be reached accidentally from a --dry-run invocation or
-    # from CI. Building it out fully (single-cell vs --batch) is left wired
-    # to run_real_single_cell / run_real_batch above, which perform the
-    # actual (deferred-import, credential-reading, network-calling) work.
+    if args.live:
+        # --- Real-run path: spends real tokens. Bounded to a single small cell. ---
+        if args.batch:
+            print(
+                "assay.py: error: --live (single-cell) does not support --batch -- "
+                "batch sweeps are a separate, later step once single-cell cost is known",
+                file=sys.stderr,
+            )
+            return 2
+        if args.hardening == "both" or args.source == "both":
+            print(
+                "assay.py: error: --live requires a single concrete --hardening and "
+                "--source (not 'both') -- run one cell at a time for a live call",
+                file=sys.stderr,
+            )
+            return 2
+        if len(payloads) != 1:
+            print(
+                "assay.py: error: --live requires exactly one payload -- use "
+                "--payload-text, or --payloads with --payload-id",
+                file=sys.stderr,
+            )
+            return 2
+        records = run_live_sweep(
+            payloads=payloads,
+            hardening_list=hardening_list,
+            source_list=source_list,
+            operationalization=args.operationalization,
+            max_dose=args.dose,
+            n_per_cell=args.n,
+            seed=args.seed,
+            sender_model=args.sender_model,
+            receiver_model=args.receiver_model,
+            config=config,
+        )
+        write_dyad_log(args.out, records, validate=True, append=False)
+        print(f"[LIVE] wrote {len(records)} schema-valid dyad records -> {args.out}")
+        print(STOCHASTICITY_DISCLAIMER)
+        return 0
+
+    # --- Neither --dry-run nor --live: refuse rather than guess. ---
+    # This is the safety default -- omitting both flags must never silently
+    # spend tokens.
     print(
-        "Real-run mode requested (no --dry-run). This build/session does not "
-        "execute this path: it requires ANTHROPIC_API_KEY, constructs a live "
-        "anthropic.Anthropic client, and spends tokens. Refusing to proceed "
-        "here; run this only in the explicitly budgeted validation phase.",
+        "assay.py: error: pass --dry-run (network-free smoke test) or --live "
+        "(spends real tokens, requires ANTHROPIC_API_KEY and a single bounded cell) -- "
+        "refusing to guess which one you meant.",
         file=sys.stderr,
     )
     return 2
